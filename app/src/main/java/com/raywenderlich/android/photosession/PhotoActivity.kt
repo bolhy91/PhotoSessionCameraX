@@ -39,14 +39,20 @@ import android.graphics.drawable.Drawable
 import android.media.Image
 import android.os.Bundle
 import android.view.Surface
+import android.view.View
 import com.raywenderlich.android.photosession.ImagePopupView.Companion.ALPHA_TRANSPARENT
 import com.raywenderlich.android.photosession.ImagePopupView.Companion.FADING_ANIMATION_DURATION
 import android.view.ViewGroup
+import android.widget.AdapterView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.*
+import androidx.camera.extensions.*
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import kotlinx.android.synthetic.main.activity_photo.*
+import java.io.File
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 
@@ -104,7 +110,107 @@ class PhotoActivity : AppCompatActivity() {
             //You set the capture mode to have the max quality.
             setCaptureMode(ImageCapture.CaptureMode.MAX_QUALITY)
         }
+        applyExtensions(imageCaptureConfig)
         return ImageCapture(imageCaptureConfig.build())
+    }
+
+    private fun toggleFrontBackCamera() {
+        lensFacing = if (lensFacing == CameraX.LensFacing.BACK) {
+            CameraX.LensFacing.FRONT
+        } else {
+            CameraX.LensFacing.BACK
+        }
+        previewView.post { startCamera() }
+    }
+
+    private fun takePicture() {
+        disableActions()
+        if (saveImageSwitch.isChecked) {
+            savePictureToFile()
+        } else {
+            savePictureToMemory()
+        }
+    }
+
+    private fun savePictureToMemory() {
+        imageCapture?.takePicture(executor,
+        object : ImageCapture.OnImageCapturedListener () {
+
+            override fun onError(
+                imageCaptureError: ImageCapture.ImageCaptureError,
+                message: String,
+                cause: Throwable?
+            ) {
+                Toast.makeText(this@PhotoActivity, getString(R.string.image_save_failed), Toast.LENGTH_LONG).show()
+            }
+
+            override fun onCaptureSuccess(image: ImageProxy?, rotationDegrees: Int) {
+                image?.image?.let {
+                    //if you captured the image successfully, you’ll convert it to a bitmap. Then, because some devices rotate the image on their own during the image capturing, you rotate it to its original position by calling rotateImage.
+                    val bitmap = rotateImage(imageToBitmap(it), rotationDegrees.toFloat())
+                    //Note that you switch to a UI thread before you change any UI components by wrapping the code inside the runOnUiThread block.
+                    runOnUiThread {
+                        takenImage.setImageBitmap(bitmap)
+                        enableActions()
+                    }
+                }
+                super.onCaptureSuccess(image, rotationDegrees)
+            }
+        })
+    }
+
+    private fun enableExtensionFeature(imageCaptureExtender: ImageCaptureExtender) {
+        if (imageCaptureExtender.isExtensionAvailable){
+            imageCaptureExtender.enableExtension()
+        } else {
+            Toast.makeText(this, getString(R.string.extension_unavailable),
+                Toast.LENGTH_SHORT).show()
+            extensionFeatures.setSelection(0)
+        }
+    }
+
+    private fun applyExtensions(
+        builder: ImageCaptureConfig.Builder
+    ) {
+        when (ExtensionFeature.fromPosition(extensionFeatures.selectedItemPosition)) {
+            ExtensionFeature.BOKEH ->
+                enableExtensionFeature(BokehImageCaptureExtender.create(builder))
+            ExtensionFeature.HDR ->
+                enableExtensionFeature(HdrImageCaptureExtender.create(builder))
+            ExtensionFeature.NIGHT_MODE ->
+                enableExtensionFeature(NightImageCaptureExtender.create(builder))
+            else -> {
+            }
+        }
+    }
+
+    private fun savePictureToFile() {
+        //Create a destination directory and file using the helper methods in the Pictures/Photo_session directory on your device.
+        fileUtils.createDirectoryIfNotExist()
+        val file = fileUtils.createFile()
+        // 2
+        imageCapture?.takePicture(file, getMetadata(), executor,
+            object : ImageCapture.OnImageSavedListener {
+                override fun onImageSaved(file: File) {
+                    // After taking the photo, if there are no errors, you set the image to ImageView and enable user actions.
+                    // Notice that you set the image using URI instead of the bitmap. You do this because you have a file object.
+                    runOnUiThread {
+                        takenImage.setImageURI(
+                            FileProvider.getUriForFile(this@PhotoActivity,
+                            packageName,
+                            file))
+                        enableActions()
+                    }
+                }
+
+                override fun onError(imageCaptureError: ImageCapture.ImageCaptureError,
+                                     message: String,
+                                     cause: Throwable?) {
+                    Toast.makeText(this@PhotoActivity,
+                        getString(R.string.image_capture_failed),
+                        Toast.LENGTH_SHORT).show()
+                }
+            })
     }
 
     private fun updateTransform() {
@@ -140,7 +246,30 @@ class PhotoActivity : AppCompatActivity() {
     isReversedHorizontal = lensFacing == CameraX.LensFacing.FRONT
   }
 
-  private fun setClickListeners() {}
+  private fun setClickListeners() {
+      toggleCameraLens.setOnClickListener { toggleFrontBackCamera() }
+      previewView.setOnClickListener {  takePicture() }
+      takenImage.setOnLongClickListener {
+          showImagePopup()
+          return@setOnLongClickListener true
+      }
+
+      extensionFeatures.onItemSelectedListener =
+          object : AdapterView.OnItemSelectedListener {
+              override fun onItemSelected(
+                  parentView: AdapterView<*>,
+                  selectedItemView: View,
+                  position: Int,
+                  id: Long
+              ) {
+                  if (ExtensionFeature.fromPosition(position) != ExtensionFeature.NONE) {
+                      previewView.post { startCamera() }
+                  }
+              }
+
+              override fun onNothingSelected(parentView: AdapterView<*>) {}
+          }
+  }
 
   private fun requestPermissions() {
     if (allPermissionsGranted()) {
