@@ -1,0 +1,19 @@
+<resources>
+  <string name="app_name">Photo Session</string>
+  <string name="taken_image">Taken image</string>
+  <string name="save_image">Save Image</string>
+  <string name="image_popup">Image Popup</string>
+  <string name="image_save_failed">Saving image failed</string>
+  <string name="image_capture_failed">Image capture failed</string>
+  <string name="extension_feature_prompt">Choose a feature</string>
+  <string name="extension_unavailable">The effect is not available on this device</string>
+  <string name="toggle_camera_lens">toggle camera lens</string>
+
+  <string-array name="extension_features">
+    <item>None</item>
+    <item>Bokeh</item>
+    <item>HDR</item>
+    <item>Night mode</item>
+  </string-array>
+
+</resources>
